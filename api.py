@@ -7,6 +7,8 @@ from flask import Flask, jsonify
 from flask_pymongo import PyMongo
 from flask_restful import Resource, Api, reqparse
 
+from common import pairing
+
 app = Flask(__name__)
 api = Api(app)
 # app.config["MONGO_DBNAME"] = "santa_secret_db"
@@ -33,13 +35,6 @@ PARTICIPANT = [
 PAIR = []
 
 
-def pairing(giver, receiver):
-    for g, r in itertools.izip_longest(giver, receiver):
-        if g == r:
-            return False
-    return True
-
-
 class Participant(Resource):
     def get(self):
         return jsonify({"status": "ok", "data": PARTICIPANT})
@@ -58,22 +53,6 @@ class Participant(Resource):
                 "name": _participantName,
                 "age": _participantAge
             })
-
-            # do the pairing
-            names = []
-            for p in PARTICIPANT:
-                names.append(p["name"])
-            givers = list(names)
-            receivers = list(names)
-            while not pairing(givers, receivers):
-                random.shuffle(givers)
-                random.shuffle(receivers)
-
-            for g, r in itertools.izip_longest(givers, receivers):
-                PAIR.append({
-                    "giver": g,
-                    "receiver": r
-                })
 
             return jsonify({"status": "ok", "message": "Participant added"})
 
@@ -107,8 +86,33 @@ class Pair(Resource):
             return {'error': str(e)}
 
 
+class Pairing(Resource):
+    def get(self):
+        try:
+            # get all names
+            names = []
+            for p in PARTICIPANT:
+                names.append(p["name"])
+            givers = list(names)
+            receivers = list(names)
+            while not pairing(givers, receivers):
+                random.shuffle(givers)
+                random.shuffle(receivers)
+
+            for g, r in itertools.izip_longest(givers, receivers):
+                PAIR.append({
+                    "giver": g,
+                    "receiver": r
+                })
+        except Exception as e:
+            return {'error': str(e)}
+
+        return jsonify({"status": "ok", "message": "Pairing done!"})
+
+
 api.add_resource(Participant, "/api/participant/", endpoint="participant")
 api.add_resource(Pair, "/api/pair/", endpoint="pair")
+api.add_resource(Pairing, "/api/pairing/", endpoint="pairing")
 
 
 if __name__ == "__main__":

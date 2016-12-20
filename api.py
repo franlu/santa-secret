@@ -1,43 +1,28 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-import random
 import itertools
+import random
 
-from flask import Flask, jsonify
+from bson.json_util import dumps
+from common.util import pairing
+from flask import Flask, g, jsonify
 from flask_pymongo import PyMongo
 from flask_restful import Resource, Api, reqparse
 
-from common import pairing
 
 app = Flask(__name__)
 api = Api(app)
-# app.config["MONGO_DBNAME"] = "santa_secret_db"
-# mongo = PyMongo(app, config_prefix='MONGO')
-# APP_URL = "http://127.0.0.1:5000"
-
-
-PARTICIPANT = [
-    {
-        "name": "juan",
-        "age": "32",
-    },
-    {
-        "name": "carlos",
-        "age": "30",
-    },
-    {
-        "name": "ana",
-        "age": "28",
-    }
-
-]
-
-PAIR = []
+app.config["MONGO_DBNAME"] = "santa_secret_db"
+mongo = PyMongo(app, config_prefix='MONGO')
 
 
 class Participant(Resource):
     def get(self):
-        return jsonify({"status": "ok", "data": PARTICIPANT})
+        participants = mongo.db.participant.find()
+        data = []
+        for p in participants:
+            data.append({"name": p["name"], "age": p["age"]})
+        return jsonify({"status": "ok", "data": data})
 
     def post(self):
         try:
@@ -48,8 +33,15 @@ class Participant(Resource):
             args = parser.parse_args()
             _participantName = args['name']
             _participantAge = args['age']
-
-            PARTICIPANT.append({
+            p = mongo.db.participant.find({
+                "name": _participantName,
+                "age": _participantAge
+            })
+            if p.count() > 0:
+                return jsonify({
+                    "status": "ok",
+                    "message": "The participant already exists."})
+            mongo.db.participant.insert({
                 "name": _participantName,
                 "age": _participantAge
             })
@@ -62,24 +54,23 @@ class Participant(Resource):
 
 class Pair(Resource):
     def get(self):
-        return jsonify({"status": "ok", "data": PAIR})
+        pairs = mongo.db.pair.find()
+        data = []
+        for p in pairs:
+            data.append({"giver": p["giver"], "receiver": p["receiver"]})
+        return jsonify({"status": "ok", "data": data})
 
     def post(self):
         try:
             parser = reqparse.RequestParser()
             parser.add_argument('name', type=str, help='Giftee\'s Name')
-
             args = parser.parse_args()
             _gifteeName = args['name']
-
-            giftee = ""
-            for p in PAIR:
-                if p["giver"] == _gifteeName:
-                    giftee = p["receiver"]
+            participant = mongo.db.participantfind_one({"giver": _gifteeName})
 
             return jsonify({
                 "status": "ok",
-                "message": "Giftee\'s Name: %s" % giftee
+                "message": "Giftee\'s Name: %s" % participant["receiver"]
             })
 
         except Exception as e:
@@ -89,21 +80,29 @@ class Pair(Resource):
 class Pairing(Resource):
     def get(self):
         try:
-            # get all names
             names = []
-            for p in PARTICIPANT:
+            participants = mongo.db.participant.find()
+            if participants.count() <= 2:
+                return jsonify({
+                    "status": "ok",
+                    "message": "Before pairing add at least 3 participants"
+                })
+            for p in participants:
                 names.append(p["name"])
+
             givers = list(names)
             receivers = list(names)
             while not pairing(givers, receivers):
                 random.shuffle(givers)
                 random.shuffle(receivers)
 
+            mongo.db.pair.remove()
             for g, r in itertools.izip_longest(givers, receivers):
-                PAIR.append({
+                mongo.db.pair.insert({
                     "giver": g,
                     "receiver": r
                 })
+
         except Exception as e:
             return {'error': str(e)}
 
